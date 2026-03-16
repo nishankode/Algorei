@@ -19,6 +19,9 @@ import {
   Users,
   Sun,
   Moon,
+  ShieldCheck,
+  Building2,
+  Users2,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -39,6 +42,12 @@ const navigation = [
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ]
 
+const managementNavigation = [
+  { name: "Overview", href: "/dashboard/management", icon: ShieldCheck },
+  { name: "Clients", href: "/dashboard/management/clients", icon: Building2 },
+  { name: "User Directory", href: "/dashboard/management/users", icon: Users2 },
+]
+
 export default function DashboardLayout({
   children,
 }: {
@@ -48,8 +57,11 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isDark, setIsDark] = useState(true)
   const [user, setUser] = useState<SupabaseUser | null>(null)
+  const [userRole, setUserRole] = useState<string | null>(null)
   const pathname = usePathname()
   const supabase = createClient()
+
+  const [invitationsCount, setInvitationsCount] = useState(0)
 
   useEffect(() => {
     setMounted(true)
@@ -58,6 +70,27 @@ export default function DashboardLayout({
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       setUser(user)
+      if (user) {
+        // Fetch global role from public.users
+        const { data: profile } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle()
+        
+        if (profile) {
+          setUserRole(profile.role)
+        }
+
+        // Fetch pending invitations count
+        const { count } = await supabase
+          .from("team_members")
+          .select("*", { count: 'exact', head: true })
+          .eq("user_id", user.id)
+          .eq("status", "invited")
+        
+        setInvitationsCount(count || 0)
+      }
     }
     getUser()
   }, [])
@@ -148,6 +181,35 @@ export default function DashboardLayout({
               )
             })}
           </div>
+
+          {userRole === 'admin' && (
+            <div className="mt-8">
+              <p className="px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+                Management
+              </p>
+              <div className="mt-2 flex flex-col gap-1">
+                {managementNavigation.map((item) => {
+                  const isActive = pathname === item.href
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      )}
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      <item.icon className="h-5 w-5 shrink-0" />
+                      <span className="truncate">{item.name}</span>
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* User menu */}
@@ -211,9 +273,11 @@ export default function DashboardLayout({
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative">
                   <Bell className="h-5 w-5" />
-                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
-                    3
-                  </span>
+                  {invitationsCount > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
+                      {invitationsCount}
+                    </span>
+                  )}
                   <span className="sr-only">Notifications</span>
                 </Button>
               </DropdownMenuTrigger>
@@ -223,6 +287,20 @@ export default function DashboardLayout({
                 </div>
                 <DropdownMenuSeparator />
                 <div className="max-h-[300px] overflow-y-auto">
+                  {invitationsCount > 0 && (
+                    <DropdownMenuItem asChild className="p-4 cursor-pointer hover:bg-amber-500/10 border-l-2 border-amber-500">
+                      <Link href="/dashboard/invitations" className="flex flex-col items-start gap-1 w-full">
+                        <p className="text-sm font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-2">
+                          <Users className="h-4 w-4" />
+                          Team Invitation
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          You have {invitationsCount} pending team invitation{invitationsCount > 1 ? 's' : ''}.
+                        </p>
+                        <p className="text-[10px] text-muted-foreground uppercase font-bold mt-1">Click to view</p>
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem className="flex flex-col items-start gap-1 p-4">
                     <p className="text-sm font-medium">Automation completed</p>
                     <p className="text-xs text-muted-foreground">
